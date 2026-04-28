@@ -45,50 +45,70 @@ export default {
   name: 'App',
   data() {
     return {
-      username: '用户'
+      username: '用户',
+      // 添加一个响应式的登录状态
+      loggedIn: localStorage.getItem('isLoggedIn') === 'true'
     }
   },
   computed: {
-    // 计算属性：检查用户是否已登录（基于localStorage）
+    // 使用响应式的 loggedIn 而不是直接读取 localStorage
     isLoggedIn() {
-      return localStorage.getItem('isLoggedIn') === 'true'
+      return this.loggedIn
     }
   },
   created() {
-    // 组件创建时更新用户名显示
     this.updateUsername()
+    // 监听 storage 事件（当其他标签页修改 localStorage 时）
+    window.addEventListener('storage', this.handleStorageChange)
+  },
+  beforeUnmount() {  // 修改这里：beforeDestroy -> beforeUnmount
+    window.removeEventListener('storage', this.handleStorageChange)
   },
   methods: {
-    // 滚动到页面顶部的辅助方法
     scrollToTop() {
       window.scrollTo({ top: 0, behavior: 'smooth' })
     },
-    // 退出登录方法
     logout() {
       localStorage.removeItem('isLoggedIn')
       localStorage.removeItem('userData')
+      this.loggedIn = false  // 立即更新响应式状态
       this.username = '用户'
       if (this.$route.path !== '/login') {
         this.$router.push('/login')
       }
     },
-    // 从localStorage更新用户名
     updateUsername() {
       const userData = localStorage.getItem('userData')
-      if (userData) {
+      if (userData && this.isLoggedIn) {
         try {
           const user = JSON.parse(userData)
           this.username = user.username || '用户'
         } catch {
           this.username = '用户'
         }
+      } else {
+        this.username = '用户'
       }
+    },
+    handleStorageChange(e) {
+      if (e.key === 'isLoggedIn') {
+        this.loggedIn = e.newValue === 'true'
+        this.updateUsername()
+      }
+    },
+    // 添加一个手动刷新登录状态的方法
+    refreshLoginState() {
+      this.loggedIn = localStorage.getItem('isLoggedIn') === 'true'
+      this.updateUsername()
     }
   },
   watch: {
-    // 监听路由变化，确保用户名在页面切换时保持更新
-    '$route'() {
+    '$route'(to, from) {
       this.updateUsername()
+      // 当从登录页跳转时，强制刷新状态
+      if (from.path === '/login' && to.path !== '/login') {
+        this.refreshLoginState()
+      }
     }
   }
 }

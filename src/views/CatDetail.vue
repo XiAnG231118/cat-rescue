@@ -584,7 +584,7 @@ export default {
         return
       }
       
-      alert(`感谢您为 ${this.cat.name} 助养 ¥${this.sponsorAmount}！\n（此处可跳转支付页面）`)
+      alert(`感谢您为 ${this.cat.name} 助养 ¥${this.sponsorAmount}！\n`)
       
       // 更新助养记录到localStorage
       const sponsors = JSON.parse(localStorage.getItem('catSponsors') || '{}')

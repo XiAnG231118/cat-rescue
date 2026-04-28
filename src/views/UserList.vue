@@ -874,6 +874,67 @@ export default {
   background: #ff9eb1;
 }
 
+/* 模态框样式 */
+.modal-header {
+  padding: 20px;
+  background: #ff7b8b;
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h3 {
+  margin: 0;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: white;
+  cursor: pointer;
+  font-size: 1.2rem;
+}
+
+.modal-content {
+  padding: 20px;
+}
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  color: #555;
+}
+
+.form-group input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.modal-footer {
+  padding: 15px 20px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.modal-cancel-btn {
+  background: #f0f0f0;
+  color: #666;
+}
+
+.modal-confirm-btn {
+  background: #ff7b8b;
+  color: white;
+}
+
 /* 返回按钮区域 */
 .action-buttons {
   margin-top: 30px;

@@ -218,6 +218,7 @@
 
 <script>
 import { catList } from '@/data/cats'
+import storyStorage from '@/utils/storage'
 
 export default {
   name: 'StoryList',
@@ -298,9 +299,12 @@ export default {
       return this.stories.filter(story => story.tag === this.activeCategory)
     }
   },
+  async mounted() {
+    await this.loadStories()
+  },
   methods: {
     // 发布新故事
-    postStory() {
+    async postStory() {
       if (!this.newStory.trim()) {
         alert('请输入故事内容')
         return
@@ -352,11 +356,11 @@ export default {
       this.selectedTag = 'story'
       this.previewImages = []
       
-      this.saveStories()
+      await this.saveStories()
     },
     
     // 切换点赞状态
-    toggleLike(index) {
+    async toggleLike(index) {
       const story = this.filteredStories[index]
       if (story.liked) {
         story.likes--
@@ -364,7 +368,7 @@ export default {
         story.likes++
       }
       story.liked = !story.liked
-      this.saveStories()
+      await this.saveStories()
     },
     
     // 切换评论表单
@@ -379,14 +383,14 @@ export default {
     },
     
     // 发布评论
-    postComment(index) {
+    async postComment(index) {
       const story = this.filteredStories[index]
       const comment = story.newComment.trim()
       if (comment) {
         story.comments.push(comment)
         story.newComment = ''
         story.showCommentForm = false
-        this.saveStories()
+        await this.saveStories()
       }
     },
     
@@ -417,16 +421,76 @@ export default {
       return tagMap[tag] || '📖 猫咪故事'
     },
     
-    // 处理图片上传
-    handleStoryImageUpload(e) {
-      const files = Array.from(e.target.files)
-      files.forEach(file => {
+    // 压缩图片
+    compressImage(file, maxSizeMB = 0.5) {
+      return new Promise((resolve) => {
         const reader = new FileReader()
-        reader.onload = (event) => {
-          this.previewImages.push(event.target.result)
+        reader.onload = (e) => {
+          const img = new Image()
+          img.onload = () => {
+            const canvas = document.createElement('canvas')
+            let width = img.width
+            let height = img.height
+            
+            // 限制最大尺寸
+            const maxWidth = 800
+            if (width > maxWidth) {
+              height = (height * maxWidth) / width
+              width = maxWidth
+            }
+            
+            canvas.width = width
+            canvas.height = height
+            
+            const ctx = canvas.getContext('2d')
+            ctx.drawImage(img, 0, 0, width, height)
+            
+            // 压缩质量
+            let quality = 0.7
+            let result = canvas.toDataURL('image/jpeg', quality)
+            
+            // 如果还是太大，继续压缩
+            while (result.length > maxSizeMB * 1024 * 1024 && quality > 0.2) {
+              quality -= 0.1
+              result = canvas.toDataURL('image/jpeg', quality)
+            }
+            
+            resolve(result)
+          }
+          img.src = e.target.result
         }
         reader.readAsDataURL(file)
       })
+    },
+    
+    // 处理图片上传
+    async handleStoryImageUpload(e) {
+      const files = Array.from(e.target.files)
+      
+      // 限制图片数量最多4张
+      const remainingSlots = 4 - this.previewImages.length
+      const filesToProcess = files.slice(0, remainingSlots)
+      
+      for (const file of filesToProcess) {
+        // 检查文件大小，大于1MB需要压缩
+        if (file.size > 1 * 1024 * 1024) {
+          const compressed = await this.compressImage(file)
+          this.previewImages.push(compressed)
+        } else {
+          const reader = new FileReader()
+          reader.onload = (event) => {
+            this.previewImages.push(event.target.result)
+          }
+          reader.readAsDataURL(file)
+        }
+      }
+      
+      if (files.length > remainingSlots) {
+        alert(`最多只能上传4张图片`)
+      }
+      
+      // 清空input，允许重复上传同一文件
+      e.target.value = ''
     },
     
     // 移除预览图片
@@ -441,6 +505,8 @@ export default {
           title: '校园猫咪故事',
           text: story.content.substring(0, 50) + '...',
           url: window.location.href
+        }).catch(() => {
+          // 用户取消分享不做处理
         })
       } else {
         // 复制链接
@@ -454,19 +520,80 @@ export default {
       }
     },
     
-    // 保存故事到localStorage
-    saveStories() {
-      // 只保存必要数据
-      const storiesToSave = this.stories.map(s => ({
-        ...s,
-        showCommentForm: false,
-        newComment: ''
-      }))
-      localStorage.setItem('communityStories', JSON.stringify(storiesToSave))
+    // 保存故事到 IndexedDB
+    // 在 StoryList.vue 的 methods 中修改 saveStories 方法
+    async saveStories() {
+      try {
+        // 创建数据的深拷贝，移除 Vue 响应式代理
+        const cleanStories = this.stories.map(story => ({
+          id: story.id,
+          content: story.content,
+          likes: story.likes,
+          liked: story.liked,
+          comments: [...story.comments],
+          time: story.time,
+          catId: story.catId,
+          tag: story.tag,
+          username: story.username,
+          images: [...(story.images || [])]
+        }))
+        
+        await storyStorage.saveStories(cleanStories)
+      } catch (e) {
+        console.error('IndexedDB 保存失败', e)
+        // 降级到 localStorage
+        this.saveStoriesToLocal()
+      }
     },
     
-    // 加载故事
-    loadStories() {
+    // 从 IndexedDB 加载故事
+    async loadStories() {
+      try {
+        const saved = await storyStorage.loadStories()
+        if (saved && saved.length) {
+          this.stories = saved.map(s => ({
+            ...s,
+            showCommentForm: false,
+            newComment: ''
+          }))
+        } else {
+          this.initDefaultData()
+        }
+      } catch (e) {
+        console.error('IndexedDB 加载失败', e)
+        this.loadStoriesFromLocal()
+      }
+    },
+    
+    // localStorage 降级保存
+    saveStoriesToLocal() {
+      try {
+        const storiesToSave = this.stories.map(s => ({
+          id: s.id,
+          content: s.content,
+          likes: s.likes,
+          liked: s.liked,
+          comments: s.comments,
+          time: s.time,
+          catId: s.catId,
+          tag: s.tag,
+          username: s.username,
+          showCommentForm: false,
+          newComment: '',
+          // 限制图片数量，避免超出 localStorage 限制
+          images: s.images ? s.images.slice(0, 2) : []
+        }))
+        localStorage.setItem('communityStories', JSON.stringify(storiesToSave))
+      } catch (e) {
+        console.error('localStorage 存储失败', e)
+        if (e.name === 'QuotaExceededError') {
+          alert('存储空间不足，请删除一些旧故事或减少图片数量')
+        }
+      }
+    },
+    
+    // localStorage 降级加载
+    loadStoriesFromLocal() {
       const saved = localStorage.getItem('communityStories')
       if (saved) {
         try {
@@ -477,7 +604,7 @@ export default {
             newComment: ''
           }))
         } catch (e) {
-          console.error('加载故事数据失败', e)
+          console.error('解析故事数据失败', e)
           this.initDefaultData()
         }
       } else {
@@ -485,6 +612,7 @@ export default {
       }
     },
     
+    // 初始化默认数据
     initDefaultData() {
       // 同步默认故事到 catStories
       const catStories = JSON.parse(localStorage.getItem('catStories') || '{}')
@@ -511,10 +639,20 @@ export default {
       })
       
       localStorage.setItem('catStories', JSON.stringify(catStories))
+      
+      // 保存默认故事到 IndexedDB
+      this.saveStories()
+    },
+    
+    // 清理所有存储数据（可选功能）
+    async clearAllStories() {
+      if (confirm('确定要删除所有故事吗？此操作不可恢复！')) {
+        this.stories = []
+        await this.saveStories()
+        localStorage.removeItem('communityStories')
+        alert('已清空所有故事')
+      }
     }
-  },
-  mounted() {
-    this.loadStories()
   }
 }
 </script>
